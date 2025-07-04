@@ -108,13 +108,11 @@ class MCPSettings(BaseModel):
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
 
-class AnthropicSettings(BaseModel):
-    """
-    Settings for using Anthropic models in the MCP Agent application.
-    """
+class VertexAISettings(BaseModel):
+    """Settings for using VertexAI models in the MCP Agent application"""
 
-    api_key: str | None = None
-    default_model: str | None = None
+    project: str | None = None
+    location: str | None = None
 
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
@@ -129,6 +127,18 @@ class BedrockSettings(BaseModel):
     aws_session_token: str | None = None
     aws_region: str | None = None
     profile: str | None = None
+
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+
+class AnthropicSettings(VertexAISettings, BedrockSettings):
+    """
+    Settings for using Anthropic models in the MCP Agent application.
+    """
+
+    api_key: str | None = None
+    default_model: str | None = None
+    provider: Literal["anthropic", "bedrock", "vertexai"] = "anthropic"
 
     model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
