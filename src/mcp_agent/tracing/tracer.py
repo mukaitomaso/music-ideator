@@ -16,13 +16,18 @@ logger = get_logger(__name__)
 
 
 class TracingConfig:
-    """Global configuration for the tracing system."""
+    """Configuration for the tracing system."""
 
-    _initialized = False
+    _global_provider_set = False  # Track if global provider has been set
+    _instrumentation_initialized = (
+        False  # Class variable to track global instrumentation
+    )
 
-    @classmethod
+    def __init__(self):
+        self._tracer_provider = None
+
     async def configure(
-        cls,
+        self,
         settings: OpenTelemetrySettings,
         session_id: str | None = None,
     ):
@@ -33,18 +38,8 @@ class TracingConfig:
             session_id: Optional session ID for exported traces
             **kwargs: Additional configuration options
         """
-        if cls._initialized:
-            return
-
         if not settings.enabled:
             logger.info("OpenTelemetry is disabled. Skipping configuration.")
-            return
-
-        # Check if a provider is already set to avoid re-initialization
-        if isinstance(trace.get_tracer_provider(), TracerProvider):
-            logger.info(
-                f"Otel tracer provider already set: {trace.get_tracer_provider().__class__.__name__}"
-            )
             return
 
         # Set up global textmap propagator first
@@ -117,26 +112,49 @@ class TracingConfig:
                     f"Unknown exporter '{exporter}' specified. Supported exporters: console, otlp, file."
                 )
 
-        # Set as global tracer provider
-        trace.set_tracer_provider(tracer_provider)
+        # Store the tracer provider instance
+        self._tracer_provider = tracer_provider
 
-        # Set up autoinstrumentation
-        # pylint: disable=import-outside-toplevel (do not import if otel is not enabled)
-        try:
-            from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
-
-            AnthropicInstrumentor().instrument()
-        except ModuleNotFoundError:
-            logger.error(
-                "Anthropic otel instrumentation not available. Please install opentelemetry-instrumentation-anthropic."
-            )
-        try:
-            from opentelemetry.instrumentation.openai import OpenAIInstrumentor
-
-            OpenAIInstrumentor().instrument()
-        except ModuleNotFoundError:
-            logger.error(
-                "OpenAI otel instrumentation not available. Please install opentelemetry-instrumentation-anthropic."
+        # Only set the global provider once
+        if not TracingConfig._global_provider_set and isinstance(
+            trace.get_tracer_provider(), trace.ProxyTracerProvider
+        ):
+            trace.set_tracer_provider(tracer_provider)
+            TracingConfig._global_provider_set = True
+            logger.info(f"Set global tracer provider for service: {service_name}")
+        else:
+            logger.info(
+                f"Global tracer provider already set, created local provider for service: {service_name}"
             )
 
-        cls._initialized = True
+        # Set up autoinstrumentation only once globally
+        if not TracingConfig._instrumentation_initialized:
+            # pylint: disable=import-outside-toplevel (do not import if otel is not enabled)
+            try:
+                from opentelemetry.instrumentation.anthropic import (
+                    AnthropicInstrumentor,
+                )
+
+                if not AnthropicInstrumentor().is_instrumented_by_opentelemetry:
+                    AnthropicInstrumentor().instrument()
+            except ModuleNotFoundError:
+                logger.error(
+                    "Anthropic OTEL instrumentation not available. Please install opentelemetry-instrumentation-anthropic."
+                )
+            try:
+                from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+
+                if not OpenAIInstrumentor().is_instrumented_by_opentelemetry:
+                    OpenAIInstrumentor().instrument()
+            except ModuleNotFoundError:
+                logger.error(
+                    "OpenAI OTEL instrumentation not available. Please install opentelemetry-instrumentation-anthropic."
+                )
+
+            TracingConfig._instrumentation_initialized = True
+
+    def get_tracer(self, name: str):
+        """Get a tracer from this configuration's provider."""
+        if self._tracer_provider:
+            return self._tracer_provider.get_tracer(name)
+        return trace.get_tracer(name)
