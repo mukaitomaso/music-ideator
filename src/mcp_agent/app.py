@@ -227,11 +227,20 @@ class MCPApp:
             },
         )
 
+        # Force flush traces before cleanup
+        if self._context and self._context.tracing_config:
+            await self._context.tracing_config.flush()
+
         try:
             # Don't shutdown OTEL completely, just cleanup app-specific resources
             await cleanup_context(shutdown_logger=False)
         except asyncio.CancelledError:
             self.logger.debug("Cleanup cancelled during shutdown")
+
+        # Shutdown the tracer provider to stop background threads
+        # This prevents dangling span exports after cleanup
+        if self._context and self._context.tracing_config:
+            self._context.tracing_config.shutdown()
 
         self._context = None
         self._initialized = False

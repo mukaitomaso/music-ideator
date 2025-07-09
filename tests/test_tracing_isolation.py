@@ -1,5 +1,6 @@
 """Tests for per-app tracing isolation."""
 
+import asyncio
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 from opentelemetry import trace
@@ -279,3 +280,220 @@ class TestTracingIsolation:
             # Test with shutdown_logger=False
             await cleanup_context(shutdown_logger=False)
             mock_shutdown.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_file_span_exporter_isolation(self):
+        """Test that multiple apps can write to different trace files."""
+        import tempfile
+        import json
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create settings for two apps with different trace files
+            trace_file1 = Path(tmpdir) / "app1_traces.jsonl"
+            trace_file2 = Path(tmpdir) / "app2_traces.jsonl"
+
+            settings1 = Settings(
+                otel=OpenTelemetrySettings(
+                    enabled=True,
+                    service_name="app1-service",
+                    exporters=["file"],
+                    path=str(trace_file1),  # Direct path
+                )
+            )
+
+            settings2 = Settings(
+                otel=OpenTelemetrySettings(
+                    enabled=True,
+                    service_name="app2-service",
+                    exporters=["file"],
+                    path=str(trace_file2),  # Direct path
+                )
+            )
+
+            # Create and run both apps
+            app1 = MCPApp(name="app1", settings=settings1)
+            app2 = MCPApp(name="app2", settings=settings2)
+
+            async with app1.run():
+                async with app2.run():
+                    # Get tracers and create spans
+                    tracer1 = app1._context.tracer
+                    tracer2 = app2._context.tracer
+
+                    if tracer1:
+                        with tracer1.start_as_current_span("test_span_app1"):
+                            pass
+
+                    if tracer2:
+                        with tracer2.start_as_current_span("test_span_app2"):
+                            pass
+
+            # Verify trace files were created
+            # The cleanup in the context manager will flush traces
+            assert trace_file1.exists(), f"Trace file {trace_file1} should exist"
+            assert trace_file2.exists(), f"Trace file {trace_file2} should exist"
+
+            # Read and verify contents
+            spans1 = []
+            with open(trace_file1, "r") as f:
+                for line in f:
+                    if line.strip():
+                        spans1.append(json.loads(line))
+
+            spans2 = []
+            with open(trace_file2, "r") as f:
+                for line in f:
+                    if line.strip():
+                        spans2.append(json.loads(line))
+
+            # Verify spans are from correct services
+            assert len(spans1) > 0, "App1 should have generated spans"
+            assert len(spans2) > 0, "App2 should have generated spans"
+
+            for span in spans1:
+                resource = span.get("resource", {})
+                attributes = resource.get("attributes", {})
+                assert attributes.get("service.name") == "app1-service"
+
+            for span in spans2:
+                resource = span.get("resource", {})
+                attributes = resource.get("attributes", {})
+                assert attributes.get("service.name") == "app2-service"
+
+    @pytest.mark.asyncio
+    async def test_file_span_exporter_with_path_settings(self):
+        """Test FileSpanExporter with TracePathSettings when path is not set."""
+        import tempfile
+        import json
+        from pathlib import Path
+        from mcp_agent.config import TracePathSettings
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Use path_settings instead of direct path
+            path_settings = TracePathSettings(
+                path_pattern=f"{tmpdir}/traces-{{unique_id}}.jsonl",
+                unique_id="session_id",
+            )
+
+            settings = Settings(
+                otel=OpenTelemetrySettings(
+                    enabled=True,
+                    service_name="path-settings-service",
+                    exporters=["file"],
+                    path_settings=path_settings,
+                    # Note: path is NOT set, so path_settings should be used
+                )
+            )
+
+            app = MCPApp(name="path-settings-app", settings=settings)
+
+            async with app.run():
+                # Create a span
+                if app._context.tracer:
+                    with app._context.tracer.start_as_current_span("test_span"):
+                        pass
+
+                # Expected file based on session_id
+                session_id = app.session_id
+                expected_file = Path(tmpdir) / f"traces-{session_id}.jsonl"
+
+            # Give exporter time to write
+            await asyncio.sleep(0.5)
+
+            # Verify the correct file was created
+            assert expected_file.exists(), f"Expected trace file at {expected_file}"
+
+            # Verify it contains spans
+            with open(expected_file, "r") as f:
+                spans = [json.loads(line) for line in f if line.strip()]
+
+            assert len(spans) > 0, "Should have generated spans"
+
+            # Verify service name
+            for span in spans:
+                resource = span.get("resource", {})
+                attributes = resource.get("attributes", {})
+                assert attributes.get("service.name") == "path-settings-service"
+
+    @pytest.mark.asyncio
+    async def test_force(self, otel_settings):
+        """Test that force allows reconfiguration of TracingConfig."""
+        config = TracingConfig()
+
+        # First configuration
+        await config.configure(otel_settings, session_id="session1")
+        provider1 = config._tracer_provider
+        assert provider1 is not None
+
+        # Try to configure again without force - should skip
+        await config.configure(otel_settings, session_id="session2")
+        assert config._tracer_provider is provider1  # Same provider
+
+        # Configure with force=True
+        await config.configure(otel_settings, session_id="session3", force=True)
+        provider2 = config._tracer_provider
+        assert provider2 is not None
+        assert provider2 is not provider1  # Different provider
+
+    @pytest.mark.asyncio
+    async def test_concurrent_apps_different_trace_files(self):
+        """Test that concurrent apps write to different trace files without interference."""
+        import tempfile
+        import asyncio
+        import json
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trace_files = []
+
+            async def run_app_with_traces(app_num: int):
+                """Run an app and generate traces."""
+                trace_file = Path(tmpdir) / f"concurrent_{app_num}.jsonl"
+                trace_files.append((app_num, trace_file))
+
+                settings = Settings(
+                    otel=OpenTelemetrySettings(
+                        enabled=True,
+                        service_name=f"concurrent-app-{app_num}",
+                        exporters=["file"],
+                        path=str(trace_file),
+                    )
+                )
+
+                app = MCPApp(name=f"concurrent-{app_num}", settings=settings)
+
+                async with app.run():
+                    # Generate some spans
+                    if app._context.tracer:
+                        for i in range(3):
+                            with app._context.tracer.start_as_current_span(f"span_{i}"):
+                                await asyncio.sleep(0.01)
+
+            # Run 5 apps concurrently
+            await asyncio.gather(*[run_app_with_traces(i) for i in range(5)])
+
+            # Give exporters time to flush
+            await asyncio.sleep(0.5)
+
+            # Verify all trace files exist and contain correct data
+            for app_num, trace_file in trace_files:
+                assert trace_file.exists(), f"Trace file for app {app_num} should exist"
+
+                # Read spans
+                spans = []
+                with open(trace_file, "r") as f:
+                    for line in f:
+                        if line.strip():
+                            spans.append(json.loads(line))
+
+                # Verify spans are present and from correct service
+                assert len(spans) >= 3, f"App {app_num} should have at least 3 spans"
+
+                for span in spans:
+                    resource = span.get("resource", {})
+                    attributes = resource.get("attributes", {})
+                    service_name = attributes.get("service.name")
+                    assert (
+                        service_name == f"concurrent-app-{app_num}"
+                    ), f"Span should be from concurrent-app-{app_num}, got {service_name}"

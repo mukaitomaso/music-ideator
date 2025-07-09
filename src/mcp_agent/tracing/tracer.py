@@ -30,17 +30,33 @@ class TracingConfig:
         self,
         settings: OpenTelemetrySettings,
         session_id: str | None = None,
+        force: bool = False,
     ):
         """
         Configure the tracing system.
 
         Args:
+            settings: OpenTelemetry settings
             session_id: Optional session ID for exported traces
-            **kwargs: Additional configuration options
+            force: Force reconfiguration even if already initialized
         """
         if not settings.enabled:
             logger.info("OpenTelemetry is disabled. Skipping configuration.")
             return
+
+        # Check if we should skip configuration
+        if self._tracer_provider and not force:
+            logger.info(
+                "Tracer provider already configured for this instance, skipping reconfiguration"
+            )
+            return
+
+        # If force and we have an existing provider, shutdown
+        if force and self._tracer_provider:
+            logger.info("Force reconfiguring tracer provider")
+            if hasattr(self._tracer_provider, "shutdown"):
+                self._tracer_provider.shutdown()
+            self._tracer_provider = None
 
         # Set up global textmap propagator first
         set_global_textmap(TraceContextTextMapPropagator())
@@ -103,6 +119,7 @@ class TracingConfig:
                             service_name=settings.service_name,
                             session_id=session_id,
                             path_settings=settings.path_settings,
+                            custom_path=settings.path,
                         )
                     )
                 )
@@ -158,3 +175,47 @@ class TracingConfig:
         if self._tracer_provider:
             return self._tracer_provider.get_tracer(name)
         return trace.get_tracer(name)
+
+    async def flush(self, timeout_ms: int = 5000) -> bool:
+        """
+        Force flush all pending spans to ensure they are exported.
+
+        Args:
+            timeout_ms: Maximum time to wait for flush in milliseconds
+
+        Returns:
+            True if flush succeeded, False otherwise
+        """
+        if not self._tracer_provider:
+            return True
+
+        if hasattr(self._tracer_provider, "force_flush"):
+            try:
+                # force_flush returns True if all spans were successfully flushed
+                success = self._tracer_provider.force_flush(timeout_millis=timeout_ms)
+                if not success:
+                    logger.warning(
+                        f"Failed to flush all traces within {timeout_ms}ms timeout"
+                    )
+                return success
+            except Exception as e:
+                logger.error(f"Error flushing traces: {e}")
+                return False
+
+        return True
+
+    def shutdown(self):
+        """
+        Shutdown the tracer provider and all its processors.
+        This stops all background threads and ensures clean shutdown.
+        """
+        if not self._tracer_provider:
+            return
+
+        if hasattr(self._tracer_provider, "shutdown"):
+            try:
+                logger.debug("Shutting down tracer provider")
+                self._tracer_provider.shutdown()
+                self._tracer_provider = None
+            except Exception as e:
+                logger.error(f"Error shutting down tracer provider: {e}")

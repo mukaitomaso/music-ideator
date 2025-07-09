@@ -207,7 +207,7 @@ async def initialize_context(
     if config.otel.enabled:
         context.tracing_enabled = True
 
-        if context.tracing_config is None:
+        if context.tracing_config is not None:
             # Use the app-specific tracer from the TracingConfig
             context.tracer = context.tracing_config.get_tracer(config.otel.service_name)
         else:
