@@ -424,7 +424,13 @@ async def _workflow_run(
 
         run_parameters = run_parameters or {}
 
+        # Note from Tomaso - sorry to edit the framework here. I ran into this issue and spent too much time trying to work around it versus just fixing this here.
+        # Something is putting the workflow instance into run_parameters, duplicating self
+        if 'self' in run_parameters:
+            run_parameters.pop('self')
+
         # Run the workflow asynchronously and get its ID
+        logger.info(f"run_parameters is {run_parameters}")
         execution = await workflow.run_async(**run_parameters)
 
         logger.info(

@@ -2,34 +2,33 @@
 """
 Music Theory MCP Server
 
-Provides music theory generation tools including chord progressions and melodies.
+Provides music theory generation workflows using the canonical MCPApp pattern.
 """
 
 import asyncio
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
-from mcp import ServerSession, Request, Response, types
+from mcp_agent.app import MCPApp
+from mcp_agent.server.app_server import create_mcp_server_for_app
 from mcp_agent.agents.agent import Agent
-from mcp.server import Server, MCPToolServer, ToolDefinition, MCPApp
-from mcp.server.stdio import stdio_server
 from mcp_agent.workflows.llm.augmented_llm_openai import OpenAIAugmentedLLM
-
+from mcp_agent.executor.workflow import Workflow, WorkflowResult
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-# Pydantic models for tool inputs/outputs
-class ProgressionInput(BaseModel):
+# Pydantic models for workflow inputs/outputs
+class ChordProgressionInput(BaseModel):
     mood: str = Field(..., description="The mood or emotion (e.g., 'happy', 'sad', 'dreamy', 'energetic')")
     key: str = Field(..., description="The musical key (e.g., 'C', 'D', 'Am', 'F#m')")
     genre: str = Field(..., description="The genre (e.g., 'pop', 'jazz', 'lofi', 'classical')")
 
-class ProgressionOutput(BaseModel):
-    chords: List[str]
+class ChordProgressionOutput(BaseModel):
+    chords: List[str] = Field(..., description="List of chord names")
+    explanation: str = Field(..., description="Brief explanation of the progression")
 
 class MelodyInput(BaseModel):
     chords: List[str] = Field(..., description="List of chords to generate melody over")
@@ -37,184 +36,182 @@ class MelodyInput(BaseModel):
     rhythm_style: str = Field(..., description="Rhythm style (e.g., 'smooth', 'staccato', 'syncopated')")
 
 class MelodyOutput(BaseModel):
-    melody: List[str]
+    melody: List[str] = Field(..., description="List of melody notes")
+    explanation: str = Field(..., description="Brief explanation of melodic choices")
 
+# Create MCPApp
+app = MCPApp(
+    name="music-theory",
+    description="Music theory generation agent with chord progressions and melodies"
+)
 
-class MusicEngine():
-
-    def __init__(self):
-        self.llm: Optional[OpenAIAugmentedLLM] = None
-        self.agent: Optional[Agent] = None
-        self.app: Optional[MCPApp] = None
-        self.initialize_llm()
-
-    async def initialize_llm(self):
-          """Initialize the LLM for music generation"""
-          try:
-              # Create MCP app with configuration
-              self.app = MCPApp(name="music_theory_agent")
-
-              async with self.app.run() as agent_app:
-                  context = agent_app.context
-
-                  # Create agent with music theory expertise
-                  self.agent = Agent(
-                      name="music_theorist",
-                      instruction="""You are an expert music theorist and composer.
-                      You have deep knowledge of:
-                      - Music theory, harmony, and chord progressions
-                      - Different musical genres and their characteristics
-                      - Emotional expression through music
-                      - Melody composition and voice leading
-                      - Music analysis and interpretation
-
-                      Always provide creative, musically sound suggestions that align with
-                      the requested mood, key, and genre. Be specific and practical.""",
-                      server_names=[]  # No additional MCP servers needed
-                  )
-
-                  async with self.agent:
-                      # Attach LLM to agent
-                      self.llm = await self.agent.attach_llm(OpenAIAugmentedLLM)
-                      logger.info("Music Theory Server: LLM initialized successfully")
-
-          except Exception as e:
-              logger.error(f"Failed to initialize LLM: {e}")
-              self.llm = None
-
+@app.workflow
+class ChordProgressionWorkflow(Workflow[ChordProgressionInput]):
+    """Generate chord progressions based on mood, key, and genre"""
     
+    @app.workflow_run
+    async def run(self, input: ChordProgressionInput) -> WorkflowResult[ChordProgressionOutput]:
+        # Create agent with music theory expertise
+        agent = Agent(
+            name="music_theorist",
+            instruction="""You are an expert music theorist and composer.
+            You have deep knowledge of:
+            - Music theory, harmony, and chord progressions
+            - Different musical genres and their characteristics
+            - Emotional expression through music
+            - Melody composition and voice leading
+            - Music analysis and interpretation
+
+            Always provide creative, musically sound suggestions that align with
+            the requested mood, key, and genre. Be specific and practical.""",
+            server_names=[]  # No additional MCP servers needed
+        )
+
+        async with agent:
+            # Attach LLM to agent
+            llm = await agent.attach_llm(OpenAIAugmentedLLM)
+            
+            prompt = f"""
+            Generate a chord progression for the following specifications:
+            - Mood: {input["mood"]}
+            - Key: {input["key"]}
+            - Genre: {input["genre"]}
+
+            Please provide:
+            1. A chord progression (4-6 chords) that fits the mood and genre
+            2. Brief explanation of why this progression works
+
+            Return the response in this format:
+            CHORDS: [chord1, chord2, chord3, chord4]
+            EXPLANATION: [brief explanation]
+
+            Example:
+            CHORDS: ['C', 'Am', 'F', 'G']
+            EXPLANATION: This I-vi-IV-V progression in C major creates a happy, uplifting feel perfect for pop music.
+            """
+            
+            response = await llm.generate_str(message=prompt)
+            
+            # Parse the response
+            chords, explanation = self._parse_chord_response(response)
+            
+            return WorkflowResult(
+                value=ChordProgressionOutput(chords=chords, explanation=explanation)
+            )
     
-    async def get_chord_progression(self, mood: str, key: str, genre: str) -> List[str]:
-        """Generate chord progression based on mood, key, and genre"""
+    def _parse_chord_response(self, response: str) -> tuple[List[str], str]:
+        """Parse LLM response to extract chord progression and explanation"""
+        chords = []
+        explanation = ""
         
-        prompt = f"""
-              Generate a chord progression for the following specifications:
-              - Mood: {mood}
-              - Key: {key}
-              - Genre: {genre}
-
-              Please provide:
-              1. A chord progression (4-6 chords) that fits the mood and genre
-              2. Brief explanation of why this progression works
-
-              Return the response in this format:
-              CHORDS: [chord1, chord2, chord3, chord4]
-              EXPLANATION: [brief explanation]
-
-              Example:
-              CHORDS: ['C', 'Am', 'F', 'G']
-              EXPLANATION: This I-vi-IV-V progression in C major creates a happy, uplifting feel perfect for pop music.
-              """
-        pattern = await self.llm.generate_str(prompt )
-        
-        # Parse the response to extract chords
-        chords = self._parse_chord_response(response)
-        if chords:
-            logger.info(f"LLM generated progression: {chords}")
-            return chords
-        else:
-            logger.warning("Failed to parse LLM response, using fallback")
-            return [] # no fallback for prototype
-    
-    
-    async def generate_melody(self, chords: List[str], mood: str, rhythm_style: str) -> List[str]:
-        prompt = f"""
-              Generate a melody for the following chord progression:
-              - Chords: {chords}
-              - Mood: {mood}
-              - Rhythm style: {rhythm_style}
-
-              Please provide:
-              1. A sequence of melody notes that work well over these chords
-              2. Consider the mood and rhythm style in your note choices
-              3. Provide about 2-4 notes per chord
-
-              Return the response in this format:
-              MELODY: [note1, note2, note3, note4, ...]
-              EXPLANATION: [brief explanation of melodic choices]
-
-              Example:
-              MELODY: ['C', 'E', 'G', 'A', 'C', 'E', 'F', 'A', 'G', 'E', 'C', 'D']
-              EXPLANATION: This melody emphasizes chord tones and creates a smooth, flowing line.
-              """
-        pattern = await self.llm.generate_str(prompt)
-        
-        melody = self._parse_melody_response(response)
-        if melody:
-            logger.info(f"LLM generated melody: {melody}")
-            return melody
-        else:
-            logger.warning("Failed to parse LLM melody response, using fallback")
-            return [] # no fallback for prototype
-    
-    def _parse_chord_response(self, response: str) -> List[str]:
-          """Parse LLM response to extract chord progression"""
-          try:
-              # Look for CHORDS: line
-              lines = response.split('\n')
-              for line in lines:
-                  if line.strip().startswith('CHORDS:'):
-                      # Extract the chord list
-                      chord_part = line.split('CHORDS:')[1].strip()
-                      # Remove brackets and split by comma
-                      chord_part = chord_part.strip('[]')
-                      chords = [chord.strip().strip("'\"") for chord in chord_part.split(',')]
-                      return [chord for chord in chords if chord]  # Filter empty strings
-          except Exception as e:
-              logger.error(f"Error parsing chord response: {e}")
-          return []
-
-    def _parse_melody_response(self, response: str) -> List[str]:
-        """Parse LLM response to extract melody notes"""
         try:
-            # Look for MELODY: line
             lines = response.split('\n')
             for line in lines:
-                if line.strip().startswith('MELODY:'):
-                    # Extract the melody list
-                    melody_part = line.split('MELODY:')[1].strip()
+                line = line.strip()
+                if line.startswith('CHORDS:'):
+                    # Extract the chord list
+                    chord_part = line.split('CHORDS:')[1].strip()
                     # Remove brackets and split by comma
-                    melody_part = melody_part.strip('[]')
-                    notes = [note.strip().strip("'\"") for note in melody_part.split(',')]
-                    return [note for note in notes if note]  # Filter empty strings
+                    chord_part = chord_part.strip('[]')
+                    chords = [chord.strip().strip("'\"") for chord in chord_part.split(',')]
+                    chords = [chord for chord in chords if chord]  # Filter empty strings
+                elif line.startswith('EXPLANATION:'):
+                    explanation = line.split('EXPLANATION:')[1].strip()
         except Exception as e:
-            logger.error(f"Error parsing melody response: {e}")
-        return []
+            logger.error(f"Error parsing chord response: {e}")
+            # Fallback
+            chords = ['C', 'Am', 'F', 'G']
+            explanation = "Generated fallback progression"
+        
+        return chords, explanation
+
+# @app.workflow
+# class MelodyWorkflow(Workflow[MelodyInput]):
+#     """Generate melodies to fit chord progressions"""
     
-# Initialize the music theory engine
-music_engine = MusicEngine()
+#     @app.workflow_run
+#     async def run(self, input: dict) -> WorkflowResult[MelodyOutput]:
+#         # Create agent with music theory expertise
+#         agent = Agent(
+#             name="melody_composer",
+#             instruction="""You are an expert melody composer with deep knowledge of:
+#             - Melodic composition and voice leading
+#             - Chord-melody relationships
+#             - Rhythmic patterns and phrasing
+#             - Different musical styles and genres
+            
+#             Create beautiful, singable melodies that complement the given chord progressions
+#             and match the specified mood and rhythm style.""",
+#             server_names=[]
+#         )
 
-# Create the MCP server
-server = MCPToolServer("music-theory")
+#         async with agent:
+#             # Attach LLM to agent
+#             llm = await agent.attach_llm(OpenAIAugmentedLLM)
+            
+#             prompt = f"""
+#             Generate a melody for the following chord progression:
+#             - Chords: {input.chords}
+#             - Mood: {input.mood}
+#             - Rhythm style: {input.rhythm_style}
 
-server.add_tool(
-    ToolDefinition(
-        name="suggest_progression",
-        description="Suggest a chord progression based on mood, key, and genre.",
-        input_model=ProgressionInput,
-        output_model=ProgressionOutput,
-        func=music_engine.get_chord_progression
-    )
-)
+#             Please provide:
+#             1. A sequence of melody notes that work well over these chords
+#             2. Consider the mood and rhythm style in your note choices
+#             3. Provide about 2-4 notes per chord
 
-server.add_tool(
-    ToolDefinition(
-        name="generate_melody",
-        description="Generate a melody to fit a chord progression and mood.",
-        input_model=MelodyInput,
-        output_model=MelodyOutput,
-        func=music_engine.generate_melody
-    )
-)
+#             Return the response in this format:
+#             MELODY: [note1, note2, note3, note4, ...]
+#             EXPLANATION: [brief explanation of melodic choices]
+
+#             Example:
+#             MELODY: ['C', 'E', 'G', 'A', 'C', 'E', 'F', 'A', 'G', 'E', 'C', 'D']
+#             EXPLANATION: This melody emphasizes chord tones and creates a smooth, flowing line.
+#             """
+            
+#             response = await llm.generate_str(message=prompt)
+            
+#             # Parse the response
+#             melody, explanation = self._parse_melody_response(response)
+            
+#             return WorkflowResult(
+#                 value=MelodyOutput(melody=melody, explanation=explanation)
+#             )
+    
+#     def _parse_melody_response(self, response: str) -> tuple[List[str], str]:
+#         """Parse LLM response to extract melody and explanation"""
+#         melody = []
+#         explanation = ""
+        
+#         try:
+#             lines = response.split('\n')
+#             for line in lines:
+#                 line = line.strip()
+#                 if line.startswith('MELODY:'):
+#                     # Extract the melody list
+#                     melody_part = line.split('MELODY:')[1].strip()
+#                     # Remove brackets and split by comma
+#                     melody_part = melody_part.strip('[]')
+#                     melody = [note.strip().strip("'\"") for note in melody_part.split(',')]
+#                     melody = [note for note in melody if note]  # Filter empty strings
+#                 elif line.startswith('EXPLANATION:'):
+#                     explanation = line.split('EXPLANATION:')[1].strip()
+#         except Exception as e:
+#             logger.error(f"Error parsing melody response: {e}")
+#             # Fallback
+#             melody = ['C', 'E', 'G', 'C']
+#             explanation = "Generated fallback melody"
+        
+#         return melody, explanation
 
 async def main():
     """Main entry point for the music theory server"""
     logger.info("Starting Music Theory MCP Server")
     
-    # Run the server using stdio transport
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
-
+    # Run the server using the canonical pattern
+    async with app.run() as agent_app:
+        mcp_server = create_mcp_server_for_app(agent_app)
+        await mcp_server.run_stdio_async()
 
 if __name__ == "__main__":
     asyncio.run(main())

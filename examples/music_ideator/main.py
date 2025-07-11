@@ -50,23 +50,21 @@ Your role:
 1. Generate chord progressions based on mood, key, and genre preferences
 2. Create complementary melodies that work with the generated chords
 3. Analyze musical compositions to provide theory insights
-4. Render completed compositions to DAW systems in various formats
+4. Manipulate DAW applications to transcribe generated chord progressions and melodies
 
 When generating music:
 - Consider the emotional context and desired mood
 - Apply appropriate music theory principles for the specified genre
 - Create melodic lines that complement the harmonic structure
-- Ensure the output is DAW-ready for further production
+- Write final products to the connected DAW application
 
 Always explain your musical choices and provide theory context when requested.
 You can also accept feedback and iterate on compositions to refine them.
 
-Available tools:
-- Music Theory: suggest_progression, generate_melody, analyze_progression
-- DAW Driver: render_to_daw, get_current_key, set_current_key, list_output_files
+When a tool call fails, don't proceed and just terminate early, letting the user know.
 
 Be creative, educational, and focus on producing high-quality musical ideas!""",
-            server_names=["music-theory", "daw-driver"],
+            server_names=["music-theory"], # server_names=["music-theory", "daw-driver"],
             human_input_callback=console_input_callback  # Enable human interaction
         )
         
@@ -144,7 +142,7 @@ Be creative, educational, and focus on producing high-quality musical ideas!""",
             try:
                 # Generate the composition
                 result = await self.llm.generate_str(
-                    f"{comp['prompt']}, then generate a complementary melody and render to DAW as JSON format"
+                    f"{comp['prompt']}, then generate a complementary melody and render to DAW"
                 )
                 
                 logger.info(f"✅ {comp['name']} complete!")
@@ -160,9 +158,9 @@ Be creative, educational, and focus on producing high-quality musical ideas!""",
         
         try:
             tools = await self.agent.list_tools()
-            logger.info(f"📋 Available tools ({len(tools)} total):")
+            logger.info(f"📋 Available tools ({len(tools.tools)} total):")
             
-            for tool in tools:
+            for tool in tools.tools:
                 logger.info(f"  🛠️  {tool.name}: {tool.description}")
             
         except Exception as e:

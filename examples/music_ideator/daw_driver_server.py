@@ -58,38 +58,6 @@ async def list_tools() -> List[types.Tool]:
                 "required": ["chords", "melody"]
             }
         ),
-        types.Tool(
-            name="get_current_key",
-            description="Get the current key setting (Hello World mock)",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        ),
-        types.Tool(
-            name="set_current_key",
-            description="Set the current key for the DAW (Hello World mock)",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "key": {
-                        "type": "string",
-                        "description": "The musical key to set (e.g., 'C', 'Am', 'F#')"
-                    }
-                },
-                "required": ["key"]
-            }
-        ),
-        types.Tool(
-            name="list_output_files",
-            description="List generated output files (Hello World mock)",
-            inputSchema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        )
     ]
 
 
@@ -111,25 +79,6 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[types.TextCont
                      f"Tempo: {tempo} BPM\n"
                      f"Format: {output_format}\n"
                      f"✅ Successfully rendered to DAW (mock implementation)"
-            )]
-        
-        elif name == "get_current_key":
-            return [types.TextContent(
-                type="text",
-                text="🎵 Hello World! Current key: C major 🎵"
-            )]
-        
-        elif name == "set_current_key":
-            key = arguments.get("key", "C")
-            return [types.TextContent(
-                type="text",
-                text=f"🎵 Hello World! Key set to: {key} 🎵"
-            )]
-        
-        elif name == "list_output_files":
-            return [types.TextContent(
-                type="text",
-                text="🎵 Hello World! No output files (mock implementation) 🎵"
             )]
         
         else:
