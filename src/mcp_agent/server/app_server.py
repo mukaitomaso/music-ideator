@@ -430,7 +430,6 @@ async def _workflow_run(
             run_parameters.pop('self')
 
         # Run the workflow asynchronously and get its ID
-        logger.info(f"run_parameters is {run_parameters}")
         execution = await workflow.run_async(**run_parameters)
 
         logger.info(

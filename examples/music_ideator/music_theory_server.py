@@ -28,7 +28,6 @@ class ChordProgressionInput(BaseModel):
 
 class ChordProgressionOutput(BaseModel):
     chords: List[str] = Field(..., description="List of chord names")
-    explanation: str = Field(..., description="Brief explanation of the progression")
 
 class MelodyInput(BaseModel):
     chords: List[str] = Field(..., description="List of chords to generate melody over")
@@ -37,7 +36,6 @@ class MelodyInput(BaseModel):
 
 class MelodyOutput(BaseModel):
     melody: List[str] = Field(..., description="List of melody notes")
-    explanation: str = Field(..., description="Brief explanation of melodic choices")
 
 # Create MCPApp
 app = MCPApp(
@@ -79,30 +77,26 @@ class ChordProgressionWorkflow(Workflow[ChordProgressionInput]):
 
             Please provide:
             1. A chord progression (4-6 chords) that fits the mood and genre
-            2. Brief explanation of why this progression works
 
             Return the response in this format:
             CHORDS: [chord1, chord2, chord3, chord4]
-            EXPLANATION: [brief explanation]
 
             Example:
             CHORDS: ['C', 'Am', 'F', 'G']
-            EXPLANATION: This I-vi-IV-V progression in C major creates a happy, uplifting feel perfect for pop music.
             """
             
             response = await llm.generate_str(message=prompt)
             
             # Parse the response
-            chords, explanation = self._parse_chord_response(response)
+            chords = self._parse_chord_response(response)
             
             return WorkflowResult(
-                value=ChordProgressionOutput(chords=chords, explanation=explanation)
+                value=ChordProgressionOutput(chords=chords)
             )
     
-    def _parse_chord_response(self, response: str) -> tuple[List[str], str]:
+    def _parse_chord_response(self, response: str) -> List[str]:
         """Parse LLM response to extract chord progression and explanation"""
         chords = []
-        explanation = ""
         
         try:
             lines = response.split('\n')
@@ -115,94 +109,85 @@ class ChordProgressionWorkflow(Workflow[ChordProgressionInput]):
                     chord_part = chord_part.strip('[]')
                     chords = [chord.strip().strip("'\"") for chord in chord_part.split(',')]
                     chords = [chord for chord in chords if chord]  # Filter empty strings
-                elif line.startswith('EXPLANATION:'):
-                    explanation = line.split('EXPLANATION:')[1].strip()
         except Exception as e:
             logger.error(f"Error parsing chord response: {e}")
             # Fallback
             chords = ['C', 'Am', 'F', 'G']
-            explanation = "Generated fallback progression"
         
-        return chords, explanation
+        return chords
 
-# @app.workflow
-# class MelodyWorkflow(Workflow[MelodyInput]):
-#     """Generate melodies to fit chord progressions"""
+@app.workflow
+class MelodyWorkflow(Workflow[MelodyInput]):
+    """Generate melodies to fit chord progressions"""
     
-#     @app.workflow_run
-#     async def run(self, input: dict) -> WorkflowResult[MelodyOutput]:
-#         # Create agent with music theory expertise
-#         agent = Agent(
-#             name="melody_composer",
-#             instruction="""You are an expert melody composer with deep knowledge of:
-#             - Melodic composition and voice leading
-#             - Chord-melody relationships
-#             - Rhythmic patterns and phrasing
-#             - Different musical styles and genres
+    @app.workflow_run
+    async def run(self, input: MelodyInput) -> WorkflowResult[MelodyOutput]:
+        # Create agent with music theory expertise
+        agent = Agent(
+            name="melody_composer",
+            instruction="""You are an expert melody composer with deep knowledge of:
+            - Melodic composition and voice leading
+            - Chord-melody relationships
+            - Rhythmic patterns and phrasing
+            - Different musical styles and genres
             
-#             Create beautiful, singable melodies that complement the given chord progressions
-#             and match the specified mood and rhythm style.""",
-#             server_names=[]
-#         )
+            Create beautiful, singable melodies that complement the given chord progressions
+            and match the specified mood and rhythm style.""",
+            server_names=[]
+        )
 
-#         async with agent:
-#             # Attach LLM to agent
-#             llm = await agent.attach_llm(OpenAIAugmentedLLM)
+        async with agent:
+            # Attach LLM to agent
+            llm = await agent.attach_llm(OpenAIAugmentedLLM)
             
-#             prompt = f"""
-#             Generate a melody for the following chord progression:
-#             - Chords: {input.chords}
-#             - Mood: {input.mood}
-#             - Rhythm style: {input.rhythm_style}
+            prompt = f"""
+            Generate a melody for the following chord progression:
+            - Chords: {input["chords"]}
+            - Mood: {input["mood"]}
+            - Rhythm style: {input["rhythm_style"]}
 
-#             Please provide:
-#             1. A sequence of melody notes that work well over these chords
-#             2. Consider the mood and rhythm style in your note choices
-#             3. Provide about 2-4 notes per chord
+            Please provide:
+            1. A sequence of melody notes that work well over these chords
+            2. Consider the mood and rhythm style in your note choices
+            3. Provide about 2-4 notes per chord
 
-#             Return the response in this format:
-#             MELODY: [note1, note2, note3, note4, ...]
-#             EXPLANATION: [brief explanation of melodic choices]
+            Return the response in this format:
+            MELODY: [note1, note2, note3, note4, ...]
 
-#             Example:
-#             MELODY: ['C', 'E', 'G', 'A', 'C', 'E', 'F', 'A', 'G', 'E', 'C', 'D']
-#             EXPLANATION: This melody emphasizes chord tones and creates a smooth, flowing line.
-#             """
+            Example:
+            MELODY: ['C', 'E', 'G', 'A', 'C', 'E', 'F', 'A', 'G', 'E', 'C', 'D']
+            """
             
-#             response = await llm.generate_str(message=prompt)
+            response = await llm.generate_str(message=prompt)
             
-#             # Parse the response
-#             melody, explanation = self._parse_melody_response(response)
+            # Parse the response
+            melody = self._parse_melody_response(response)
             
-#             return WorkflowResult(
-#                 value=MelodyOutput(melody=melody, explanation=explanation)
-#             )
+            return WorkflowResult(
+                value=MelodyOutput(melody=melody)
+            )
     
-#     def _parse_melody_response(self, response: str) -> tuple[List[str], str]:
-#         """Parse LLM response to extract melody and explanation"""
-#         melody = []
-#         explanation = ""
+    def _parse_melody_response(self, response: str) -> tuple[List[str], str]:
+        """Parse LLM response to extract melody and explanation"""
+        melody = []
         
-#         try:
-#             lines = response.split('\n')
-#             for line in lines:
-#                 line = line.strip()
-#                 if line.startswith('MELODY:'):
-#                     # Extract the melody list
-#                     melody_part = line.split('MELODY:')[1].strip()
-#                     # Remove brackets and split by comma
-#                     melody_part = melody_part.strip('[]')
-#                     melody = [note.strip().strip("'\"") for note in melody_part.split(',')]
-#                     melody = [note for note in melody if note]  # Filter empty strings
-#                 elif line.startswith('EXPLANATION:'):
-#                     explanation = line.split('EXPLANATION:')[1].strip()
-#         except Exception as e:
-#             logger.error(f"Error parsing melody response: {e}")
-#             # Fallback
-#             melody = ['C', 'E', 'G', 'C']
-#             explanation = "Generated fallback melody"
+        try:
+            lines = response.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line.startswith('MELODY:'):
+                    # Extract the melody list
+                    melody_part = line.split('MELODY:')[1].strip()
+                    # Remove brackets and split by comma
+                    melody_part = melody_part.strip('[]')
+                    melody = [note.strip().strip("'\"") for note in melody_part.split(',')]
+                    melody = [note for note in melody if note]  # Filter empty strings
+        except Exception as e:
+            logger.error(f"Error parsing melody response: {e}")
+            # Fallback
+            melody = ['C', 'E', 'G', 'C']
         
-#         return melody, explanation
+        return melody
 
 async def main():
     """Main entry point for the music theory server"""
