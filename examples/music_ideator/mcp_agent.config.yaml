@@ -1,0 +1,98 @@
+# Music Ideator Agent Configuration
+# This configuration sets up the MCP app with both music theory and DAW driver servers
+
+execution_engine: asyncio
+
+# Logging configuration
+logger:
+  transports: [console, file]  # Log to both console and file
+  level: info
+  path: "logs/music_ideator.jsonl"
+  path_settings:
+    path_pattern: "logs/music_ideator-{unique_id}.jsonl"
+    unique_id: "timestamp"
+    timestamp_format: "%Y%m%d_%H%M%S"
+
+# MCP Server Configuration
+mcp:
+  servers:
+    # Music Theory Server - handles chord progressions and melodies
+    music-theory:
+      command: "python"
+      args: ["music_theory_server.py"]
+      description: "Music theory generation server for chord progressions, melodies, and analysis"
+      
+    # DAW Driver Server - handles rendering to DAW systems
+    daw-driver:
+      command: "uvx"
+      args: ["ableton-mcp"]
+      description: "DAW driver server for rendering musical content via MIDI, OSC, or file export"
+
+# OpenAI Configuration (for the LLM)
+openai:
+  # API key will be loaded from mcp_agent.secrets.yaml
+  default_model: gpt-4o
+  max_tokens: 4000
+  temperature: 0.7  # Slightly creative for music generation
+  
+  # Optional: Model-specific configurations
+  model_configs:
+    gpt-4o:
+      max_tokens: 4000
+      temperature: 0.7
+    gpt-4o-mini:
+      max_tokens: 2000
+      temperature: 0.8  # More creative for simpler tasks
+
+# Optional: Anthropic configuration (alternative LLM provider)
+# anthropic:
+#   default_model: claude-3-5-sonnet-20241022
+#   max_tokens: 4000
+#   temperature: 0.7
+
+# Agent-specific settings
+agents:
+  music_ideator:
+    # Default settings for the music ideator agent
+    default_llm_provider: openai
+    default_model: gpt-4o
+    
+    # Human input settings
+    human_input:
+      enabled: true
+      timeout: 30  # 30 seconds timeout for human input
+      
+    # Tool filtering (optional)
+    tool_filter:
+      # Allow all tools from both servers
+      allowed_servers: ["music-theory", "daw-driver"]
+      # Optionally restrict specific tools
+      # allowed_tools: ["suggest_progression", "generate_melody", "render_to_daw"]
+
+# Application settings
+app:
+  # Output directory for generated files
+  output_directory: "output"
+  
+  # Temporary files
+  temp_directory: "temp"
+  
+  # Performance settings
+  max_concurrent_tools: 5
+  tool_timeout: 30  # seconds
+  
+  # Development settings
+  debug_mode: false
+  verbose_logging: true
+
+# Optional: Telemetry and monitoring
+# telemetry:
+#   enabled: false
+#   endpoint: "http://localhost:4317"
+#   service_name: "music-ideator-agent"
+
+# Optional: Custom error handling
+error_handling:
+  max_retries: 3
+  retry_delay: 1.0  # seconds
+  fallback_model: gpt-4o-mini  # Use cheaper model as fallback

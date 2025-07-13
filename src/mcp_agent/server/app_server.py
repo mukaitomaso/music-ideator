@@ -427,15 +427,11 @@ async def _workflow_run(
 
         run_parameters = run_parameters or {}
 
-        # Pass workflow_id and task_queue as special system parameters
-        workflow_id = kwargs.get("workflow_id", None)
-        task_queue = kwargs.get("task_queue", None)
-
-        # Using __mcp_agent_ prefix to avoid conflicts with user parameters
-        if workflow_id:
-            run_parameters["__mcp_agent_workflow_id"] = workflow_id
-        if task_queue:
-            run_parameters["__mcp_agent_task_queue"] = task_queue
+        # Note from Tomaso - sorry to edit the framework here. I ran into this issue and spent too much time trying to work around it versus just fixing this here.
+        # Something is putting the workflow instance into run_parameters, duplicating self
+        # Looks like this was fixed upstream after my fork.
+        if 'self' in run_parameters:
+            run_parameters.pop('self')
 
         # Run the workflow asynchronously and get its ID
         execution = await workflow.run_async(**run_parameters)

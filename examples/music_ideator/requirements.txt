@@ -1,0 +1,36 @@
+# Music Ideator Agent Dependencies
+# Install with: pip install -r requirements.txt
+
+# MCP Agent Framework (with OpenAI support)
+mcp-agent[openai]>=0.1.6
+
+# Core MCP dependencies
+mcp>=1.10.1
+
+# LLM Providers
+openai>=1.58.1
+
+# Optional: Additional LLM providers
+# anthropic>=0.48.0  # Uncomment if using Claude models
+# azure-ai-inference>=1.0.0b9  # Uncomment if using Azure OpenAI
+
+# Music and MIDI processing (for future DAW integration)
+# These are optional for the mock implementation but useful for real DAW integration
+mido>=1.3.0  # MIDI file handling
+python-osc>=1.8.0  # OSC (Open Sound Control) support
+
+# Data handling and utilities
+pydantic>=2.10.4
+pyyaml>=6.0.2
+
+# Logging and monitoring
+rich>=13.9.4  # Enhanced console output
+
+# Development and testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.1
+
+# Optional: Audio processing libraries (for advanced features)
+# librosa>=0.10.0  # Audio analysis
+# soundfile>=0.12.0  # Audio file I/O
+# numpy>=2.1.3  # Numerical processing
