@@ -24,8 +24,8 @@ mcp:
       
     # DAW Driver Server - handles rendering to DAW systems
     daw-driver:
-      command: "python"
-      args: ["daw_driver_server.py"]
+      command: "uvx"
+      args: ["ableton-mcp"]
       description: "DAW driver server for rendering musical content via MIDI, OSC, or file export"
 
 # OpenAI Configuration (for the LLM)

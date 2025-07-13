@@ -64,7 +64,7 @@ You can also accept feedback and iterate on compositions to refine them.
 When a tool call fails, don't proceed and just terminate early, letting the user know.
 
 Be creative, educational, and focus on producing high-quality musical ideas!""",
-            server_names=["music-theory"], # server_names=["music-theory", "daw-driver"],
+            server_names=["music-theory", "daw-driver"],
             human_input_callback=console_input_callback  # Enable human interaction
         )
         

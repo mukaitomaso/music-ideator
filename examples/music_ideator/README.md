@@ -1,4 +1,4 @@
-# 🎵 Music Ideator Agent
+# 🎵 Ableton Live Music Ideator Agent
 
 A creative music ideation agent built with the mcp-agent framework that generates chord progressions and melodies using two specialized MCP servers.
 
@@ -12,11 +12,7 @@ This project demonstrates a **2-Server Music Ideator Agent** with the following 
    - `generate_melody(chords, mood, rhythm_style)` → creates melody lines
    - `analyze_progression(chords)` → provides music theory analysis
 
-2. **DAW Driver Server** (`daw_driver_server.py`)
-   - `render_to_daw(chords, melody)` → renders to DAW systems (MIDI/OSC/JSON)
-   - `get_current_key()` → retrieves current key setting
-   - `set_current_key(key)` → sets musical key for DAW
-   - `list_output_files()` → lists generated output files
+2. **Daw Controller Server** provided by `ableton-mcp`: https://glama.ai/mcp/servers/@ahujasid/ableton-mcp
 
 ### Agent
 - **music_ideator**: An OpenAI-powered agent with access to both servers
@@ -38,6 +34,8 @@ pip install -r requirements.txt
 uv add -r requirements.txt
 ```
 
+Next, refer to the ableton-mcp documentation to run the Ableton remote server in your Ableton DAW (Digital Audio Workstation): https://glama.ai/mcp/servers/@ahujasid/ableton-mcp
+
 ### 2. Configuration
 
 ```bash
@@ -52,6 +50,8 @@ cp mcp_agent.secrets.yaml.example mcp_agent.secrets.yaml
 ### 3. Run the Demo
 
 ```bash
+# Ensure the Ableton Remote Script is running locally in your DAW
+
 # Basic demo (as requested in the prompt)
 python main.py
 
